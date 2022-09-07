@@ -6,7 +6,7 @@ from std_msgs.msg import String
 
 class UART_COM():
     def __init__(self):
-        self.port = '/dev/ttyTHS1'
+        self.port = '/dev/ttyAMA0'
         self.timeout = 0.1
         self.uart = serial.Serial(self.port,timeout=self.timeout)
     def recieve(self):
@@ -23,11 +23,12 @@ class UART_COM():
         #try to convert msg to string
         try:
             str_msg = str(arg_msg)
+            str_msg = str_msg + '\r\n'
         except:
             # break sending when data cant be converted
             return
         # send converted data
-        self.uart.write(str_msg)
+        self.uart.write(str_msg.encode())
     def __del__(self):
         # added closing serial pipe when deleting object
         self.uart.close()

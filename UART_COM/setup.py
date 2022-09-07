@@ -13,13 +13,14 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='ininrobot',
-    maintainer_email='ininrobot@todo.todo',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    maintainer='RasiewF',
+    maintainer_email='filiprasiewicz@gmail.com',
+    description='UART communication package',
+    license='MIT',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'uart_node = UART_COM.UART_COM:main',
         ],
     },
 )
