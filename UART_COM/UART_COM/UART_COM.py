@@ -35,11 +35,17 @@ class UART_COM():
 class UART_ROS(Node):
     def __init__(self):
         super().__init__('UART_Node')
-        self.subscribe = self.create_subscription(String, 'UART_topic', self.topic_callback, 10)
-        self.subscribe
+        #initialize subscription and publishing for UART_Node
+        self.subscriber = self.create_subscription(String, 'UARTTX_topic', self.topic_callback, 10)
+        self.publisher = self.create_publisher(String, 'UARTRX_topic', 10)
         self.uart_obj = UART_COM()
+        self.subscriber
+    # typical callback function for catching data from topic and sending them directly via UART
     def topic_callback(self, msg):
         self.uart_obj.send(msg.data)
+    # template-temporary feedback callback function which will give data for feedback loop - actions
+    def feedback_callback(self):
+        self.publisher.publish("rx_feedback")
     def __del__(self):
         del self.uart_obj
 
@@ -47,7 +53,7 @@ def main(arg=None):
     rclpy.init(args=arg)
     ros_node = UART_ROS()
     rclpy.spin(ros_node)
-    
+    #when finished destroy node and delete objects:
     ros_node.destroy_node()
     del ros_node
     rclpy.shutdown()
