@@ -6,7 +6,7 @@ from std_msgs.msg import String
 
 class UART_COM():
     def __init__(self):
-        self.port = '/dev/ttyAMA0'
+        self.port = '/dev/serial0'
         self.timeout = 0.1
         self.uart = serial.Serial(self.port,timeout=self.timeout)
     def recieve(self):
