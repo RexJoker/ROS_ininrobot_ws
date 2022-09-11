@@ -1,10 +1,10 @@
 from setuptools import setup
 
-package_name = 'UART_COM'
+package_name = 'uart_com'
 
 setup(
     name=package_name,
-    version='0.0.0',
+    version='1.0.0',
     packages=[package_name],
     data_files=[
         ('share/ament_index/resource_index/packages',
@@ -20,7 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'uart_node = UART_COM.UART_COM:main',
+            'uart_node = uart_com.uart_com:main',
         ],
     },
 )
