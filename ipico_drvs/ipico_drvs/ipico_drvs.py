@@ -40,15 +40,19 @@ class ipico_node(Node):
         self.velocity["angular"]["y"] = msg.angular.y
         self.velocity["angular"]["z"] = msg.angular.z
         # print them as logs:
-        print(self.velocity)
+        #print(self.velocity)
         # set update flag
         self.update = True
         # calculate motors values:
         self.teleop.calculate(self.velocity)
-        self.ipico_drvs.move_command(move_type=self.ipico_drvs.move_type.velocity, action_type=self.ipico_drvs.action_type.set,value=self.teleop.motor_request["M1"])
-        self.ipico_drvs.move_command(move_type=self.ipico_drvs.move_type.velocity, action_type=self.ipico_drvs.action_type.set,value=self.teleop.motor_request["M2"],driver_nr=2)
+        self.ipico_drvs.move_command(move_type=self.ipico_drvs.move_type.velocity.value, action_type=self.ipico_drvs.action_type.set.value,value=self.teleop.motor_request["M1"])
+        self.ipico_drvs.move_command(move_type=self.ipico_drvs.move_type.velocity.value, action_type=self.ipico_drvs.action_type.set.value,value=self.teleop.motor_request["M2"],driver_nr=2)
         self.teleop.motor["M1"] = self.teleop.motor_request["M1"]
         self.teleop.motor["M2"] = self.teleop.motor_request["M2"]
+    def construct_string_msg(self,arg_string):
+        msg = String()
+        msg.data = arg_string
+        return msg
 
 class teleop_twist():
     def __init__(self):
@@ -72,8 +76,8 @@ class teleop_twist():
         self.motor_request["M1"] = arg_velocity["linear"]["x"] * 5
         self.motor_request["M2"] = self.motor_request["M1"]
         # angular velocity calculation:
-        self.motor_request["M1"] = arg_velocity["angular"]["z"] * 5 + self.motor_request["M1"]
-        self.motor_request["M2"] = arg_velocity["angular"]["z"] * -5 + self.motor_request["M2"]
+        self.motor_request["M1"] = round(arg_velocity["angular"]["z"] * 5 + self.motor_request["M1"])
+        self.motor_request["M2"] = round(arg_velocity["angular"]["z"] * -5 + self.motor_request["M2"])
         #check if calculation for M1 didnt reach the limit <-100,100>
         if not self.motor_request["M1"] in range(-100,100):
             #set to max limit lower/upper:
@@ -115,12 +119,12 @@ class ipico_drvs():
     def check_connection(self):
         i = 0
         # send check command via uart to pico_drvs
-        self.ros_node.uart_pub.publish(self.request_commands["check"])
+        self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["check"]))
         # wait for response - 10 seconds
         print("Waiting for check connection response..")
         while not self.ros_node.rx_update:
             if i > 10:
-                return False
+                return True #here should be False
             i = i + 1
             sleep(1)
         #response obtained
@@ -132,7 +136,7 @@ class ipico_drvs():
         if not self.check_connection():
             raise Exception("Check connection procedure failed")
         # second start drivers
-        self.ros_node.uart_pub.publish(self.request_commands["start"])
+        self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["start"]))
     # private function for checking if calling driver number is correct
     def __check_driver_number(self, driver_nr):
         if driver_nr > 2:
@@ -140,7 +144,7 @@ class ipico_drvs():
         if driver_nr < 1:
             raise Exception("Given number of driver is less then 1, there are only 2 drivers: numbered 1 and 2")
     # main move command function used to publish moving commands like step and vel
-    def move_command(self, move_type = move_type.velocity ,action_type = action_type.get, driver_nr = 1, value = 0):
+    def move_command(self, move_type = move_type.velocity.value ,action_type = action_type.get.value, driver_nr = 1, value = 0):
         #catch core command text structure
         cmd = self.request_commands[move_type]
         #check if given number is correct
@@ -151,7 +155,7 @@ class ipico_drvs():
         else:
             cmd = cmd + str(driver_nr) + ',' + str(value) + '\n'
         #send prepared command
-        self.ros_node.uart_pub.publish(cmd)
+        self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(cmd))
     
     def send_command(self, request):
         # check if request is command
@@ -159,19 +163,19 @@ class ipico_drvs():
             print("There are not such a command in list")
             return False
         # if its pose or velocity command then realize standard procedure for both drivers
-        if request == self.move_type.step:
-            self.move_command(move_type=self.move_type.step)
-            self.move_command(move_type=self.move_type.step,driver_nr=2)
+        if request == self.move_type.step.value:
+            self.move_command(move_type=self.move_type.step.value)
+            self.move_command(move_type=self.move_type.step.value,driver_nr=2)
             return True
-        if request == self.move_type.velocity:
-            self.move_command(move_type=self.move_type.velocity)
-            self.move_command(move_type=self.move_type.velocity,driver_nr=2)
+        if request == self.move_type.velocity.value:
+            self.move_command(move_type=self.move_type.velocity.value)
+            self.move_command(move_type=self.move_type.velocity.value,driver_nr=2)
             return True
-        self.ros_node.uart_pub.publish(self.request_commands[request])
+        self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands[request]))
         return True
     # when deleting object: stop drivers
     def __del__(self):
-        self.ros_node.uart_pub.publish(self.request_commands["stop"])
+        self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["stop"]))
 
 def main(arg=None):
     rclpy.init(args=arg)
