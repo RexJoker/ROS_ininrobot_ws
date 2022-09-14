@@ -1,8 +1,6 @@
 from enum import Enum
-from shutil import move
 from time import sleep
 import rclpy
-import threading
 from rclpy.node import Node
 from geometry_msgs.msg import Twist as BSmart #easter egg
 from std_msgs.msg import String
@@ -45,6 +43,12 @@ class ipico_node(Node):
         print(self.velocity)
         # set update flag
         self.update = True
+        # calculate motors values:
+        self.teleop.calculate(self.velocity)
+        self.ipico_drvs.move_command(move_type=self.ipico_drvs.move_type.velocity, action_type=self.ipico_drvs.action_type.set,value=self.teleop.motor_request["M1"])
+        self.ipico_drvs.move_command(move_type=self.ipico_drvs.move_type.velocity, action_type=self.ipico_drvs.action_type.set,value=self.teleop.motor_request["M2"],driver_nr=2)
+        self.teleop.motor["M1"] = self.teleop.motor_request["M1"]
+        self.teleop.motor["M2"] = self.teleop.motor_request["M2"]
 
 class teleop_twist():
     def __init__(self):
@@ -90,7 +94,7 @@ class ipico_drvs():
         get = False
         set = True
     class move_type(Enum):
-        pose = "pose"
+        step = "step"
         velocity = "vel"
     def __init__(self, node):
         self.feedback = True
@@ -102,7 +106,7 @@ class ipico_drvs():
             "safety_stop":'drv_SAFETY_STOP\n',
             "fullstep":'drv_FSTEP\n',
             "halfstep":'drv_HSTEP\n',
-            "pose":'drv_POSE=',
+            "step":'drv_STEP=',
             "vel":'drv_VEL='
         }
         self.ros_node = node
@@ -134,8 +138,8 @@ class ipico_drvs():
         if driver_nr > 2:
             raise Exception("Given number of driver is greater then 2 there are only 2 drivers")
         if driver_nr < 1:
-            raise Exception("Given number of driver is less then 1, there are only 2 drivers from numbered 1 and 2")
-    # main move command function used to publish moving commands like pose and vel
+            raise Exception("Given number of driver is less then 1, there are only 2 drivers: numbered 1 and 2")
+    # main move command function used to publish moving commands like step and vel
     def move_command(self, move_type = move_type.velocity ,action_type = action_type.get, driver_nr = 1, value = 0):
         #catch core command text structure
         cmd = self.request_commands[move_type]
@@ -152,12 +156,12 @@ class ipico_drvs():
     def send_command(self, request):
         # check if request is command
         if not request in self.request_commands:
-            print("There are not such commands")
+            print("There are not such a command in list")
             return False
         # if its pose or velocity command then realize standard procedure for both drivers
-        if request == self.move_type.pose:
-            self.move_command(move_type=self.move_type.pose)
-            self.move_command(move_type=self.move_type.pose,driver_nr=2)
+        if request == self.move_type.step:
+            self.move_command(move_type=self.move_type.step)
+            self.move_command(move_type=self.move_type.step,driver_nr=2)
             return True
         if request == self.move_type.velocity:
             self.move_command(move_type=self.move_type.velocity)
