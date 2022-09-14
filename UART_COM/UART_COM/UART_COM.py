@@ -8,7 +8,7 @@ class uart_com():
     def __init__(self):
         self.port = '/dev/serial0'
         self.timeout = 0.1
-        # todo: baudrate = 115200 8n2
+        # TODO: #1 baudrate = 115200 8n2
         self.uart = serial.Serial(self.port,timeout=self.timeout)
     def recieve(self):
         # gather full line of data through UART
