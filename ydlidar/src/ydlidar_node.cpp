@@ -30,6 +30,7 @@
 #include <string>
 #include <signal.h>
 
+
 #define ROS2Verision "1.4.5"
 
 
@@ -58,7 +59,7 @@ int main(int argc, char *argv[]) {
   rclcpp::init(argc, argv);
 
   auto node = rclcpp::Node::make_shared("ydlidar_node");
-  std::string port = "/dev/ttyUSB0";
+  std::string port = "/dev/serial0";
   int baudrate = 115200;
   std::string frame_id = "laser_frame";
   bool reversion = false;
@@ -171,15 +172,13 @@ int main(int argc, char *argv[]) {
 
 
   printf("[YDLIDAR INFO] Current ROS Driver Version: %s\n", ((std::string)ROS2Verision).c_str());
+
   bool ret = laser.initialize();
   if (ret) {
     ret = laser.turnOn();
   }
-
+  
   auto laser_pub = node->create_publisher<sensor_msgs::msg::LaserScan>("scan", rclcpp::SensorDataQoS());
-
-
-
   rclcpp::WallRate loop_rate(20);
 
   while (ret && rclcpp::ok()) {

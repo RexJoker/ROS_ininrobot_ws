@@ -182,8 +182,8 @@ def main(arg=None):
     ros_node = ipico_node()
     rclpy.spin(ros_node)
     #when finished destroy node and delete objects:
-    ros_node.destroy_node()
     del ros_node
+    ros_node.destroy_node()
     rclpy.shutdown()
 
 if __name__ == '__main__':
