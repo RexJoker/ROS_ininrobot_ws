@@ -1,5 +1,6 @@
 from enum import Enum
 from time import sleep
+from typing import NamedTuple
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist as BSmart #easter egg
@@ -24,11 +25,12 @@ class ipico_node(Node):
         self.vel_sub
         self.uart_sub
         self.ipico_drvs = ipico_drvs(self)
-        self.teleop = teleop_twist()
+        self.teleop = teleop_twist(self)
 
     def uart_callback(self, msg):
         self.feedback = msg.data
         self.rx_update = True
+        self.ipico_drvs.read_data(self.feedback)
 
     def cmd_vel_callback(self, msg):
         # rewriting data from geometry_msg to class variable
@@ -45,7 +47,7 @@ class ipico_node(Node):
         # set update flag
         self.update = True
         # calculate motors values:
-        self.teleop.calculate(self.velocity)
+        self.teleop.velocity = self.velocity
         self.ipico_drvs.move_command(move_type=self.ipico_drvs.move_type.velocity.value, action_type=self.ipico_drvs.action_type.set.value,value=self.teleop.motor_request["M1"])
         self.ipico_drvs.move_command(move_type=self.ipico_drvs.move_type.velocity.value, action_type=self.ipico_drvs.action_type.set.value,value=self.teleop.motor_request["M2"],driver_nr=2)
         self.teleop.motor["M1"] = self.teleop.motor_request["M1"]
@@ -62,8 +64,17 @@ class ipico_drvs():
     class move_type(Enum):
         step = "step"
         velocity = "vel"
+    class cmd():
+        def __init__(self):
+            self.name = None
+            self.action_type = None
+            self.move_type = None
+            self.motor_number = 0
     def __init__(self, node):
-        self.feedback = True
+        self.feedback = {
+            "Name" : None,
+            "Value" : 0
+        }
         self.request_commands = {
             "check":'drv_CHECK\n',
             "start":'drv_START\n',
@@ -75,6 +86,7 @@ class ipico_drvs():
             "step":'drv_STEP=',
             "vel":'drv_VEL='
         }
+        self.__last_command = self.cmd()
         self.ros_node = node
         self.drvs_init_procedure()
 
@@ -99,6 +111,7 @@ class ipico_drvs():
             raise Exception("Check connection procedure failed")
         # second start drivers
         self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["start"]))
+        self.remember_command("start")
     # private function for checking if calling driver number is correct
     def __check_driver_number(self, driver_nr):
         if driver_nr > 2:
@@ -118,6 +131,8 @@ class ipico_drvs():
             cmd = cmd + str(driver_nr) + ',' + str(value) + '\n'
         #send prepared command
         self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(cmd))
+        #remember last command:
+        self.remember_command(move_type,arg_move_type=move_type,arg_action_type=action_type,arg_driver_nr=driver_nr)
     
     def send_command(self, request):
         # check if request is command
@@ -134,8 +149,42 @@ class ipico_drvs():
             self.move_command(move_type=self.move_type.velocity.value,driver_nr=2)
             return True
         self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands[request]))
+        #remember last command:
+        self.remember_command(request)
         return True
+    def read_data(self, arg_msg):
+        self.feedback["Name"] = self.__last_command.name
+        self.feedback["Value"] = arg_msg
     # when deleting object: stop drivers
+    def remember_command(self, arg_name, arg_move_type = None, arg_action_type = None, arg_driver_nr = 0):
+        self.__last_command.name = arg_name
+        self.__last_command.move_type = arg_move_type
+        self.__last_command.action_type = arg_action_type
+        self.__last_command.motor_number = arg_driver_nr
+    def get_vels(self):
+        motor = {
+            "M1" : 0,
+            "M2" : 0
+        }
+        #iterate through 2 motors
+        for n in range (1,2):
+            #send command for getting velocity from motor n
+            self.move_command(driver_nr=n)
+            i = 0
+            #wait until msg appears on uart rx
+            while not self.ros_node.rx_update:
+                #try 5 times every 1 second to get data
+                if i > 5:
+                    #if there is no any msg to recievie then its bad
+                    raise Exception("Wait for response too long")
+                sleep(1)
+            # if data appears then check it and pass it to variable
+            if self.feedback["Name"] == "vel" and self.__last_command.action_type == self.action_type.get.value:
+                txt = "M" + n
+                motor[txt] = self.feedback["Value"]
+            else:
+                raise Exception("Bad feedback")
+        return motor
     def __del__(self):
         self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["stop"]))
 
