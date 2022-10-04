@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist as BSmart #easter egg
 from std_msgs.msg import String
+from teleop_twist_class import teleop_twist
 
 class ipico_node(Node):
     def __init__(self):
@@ -53,45 +54,6 @@ class ipico_node(Node):
         msg = String()
         msg.data = arg_string
         return msg
-
-class teleop_twist():
-    def __init__(self):
-        self.velocity = {
-            "linear" : {"x":0.0,"y":0.0,"z":0.0},
-            "angular": {"x":0.0,"y":0.0,"z":0.0},
-        }
-        self.motor = {
-            "M1" : 0,
-            "M2" : 0
-        }
-        self.motor_request = {
-            "M1" : 0,
-            "M2" : 0
-        }
-        self.ack = False
-        self.reached = False
-    #basic calculation template with linear function - transformation
-    def calculate(self, arg_velocity):
-        # linear velocity calculation:
-        self.motor_request["M1"] = arg_velocity["linear"]["x"] * 5
-        self.motor_request["M2"] = self.motor_request["M1"]
-        # angular velocity calculation:
-        self.motor_request["M1"] = round(arg_velocity["angular"]["z"] * 5 + self.motor_request["M1"])
-        self.motor_request["M2"] = round(arg_velocity["angular"]["z"] * -5 + self.motor_request["M2"])
-        #check if calculation for M1 didnt reach the limit <-100,100>
-        if not self.motor_request["M1"] in range(-100,100):
-            #set to max limit lower/upper:
-            if self.motor_request["M1"] < 0:
-                self.motor_request["M1"] = -100
-            else:
-                self.motor_request["M1"] = 100
-        #check if calculation for M2 didnt reach the limit <-100,100>
-        if not self.motor_request["M2"] in range(-100,100):
-            #set to max limit lower/upper:
-            if self.motor_request["M2"] < 0:
-                self.motor_request["M2"] = -100
-            else:
-                self.motor_request["M2"] = 100
 
 class ipico_drvs():
     class action_type(Enum):
