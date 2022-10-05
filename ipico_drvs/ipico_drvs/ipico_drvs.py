@@ -5,14 +5,14 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist as BSmart #easter egg
 from std_msgs.msg import String
-from teleop_twist_class import teleop_twist
+import threading
 
 class ipico_node(Node):
     def __init__(self):
         super().__init__('ipico_node')
         #initialize subscriptions and publishing for Ipico_node
-        self.vel_sub = self.create_subscription(BSmart, 'cmd_vel', self.cmd_vel_callback, 10)
-        self.uart_sub = self.create_subscription(String, 'UARTRX_topic', self.uart_callback, 10)
+        self.vel_sub = self.create_subscription(BSmart, 'cmd_vel', self.cmd_vel_callback, 1)
+        self.uart_sub = self.create_subscription(String, 'UARTRX_topic', self.uart_callback, 1)
         self.uart_pub = self.create_publisher(String, 'UARTTX_topic', 10)
         self.update = False
         self.velocity = {
@@ -30,6 +30,7 @@ class ipico_node(Node):
     def uart_callback(self, msg):
         self.feedback = msg.data
         self.rx_update = True
+        print(self.rx_update)
         if self.ipico_drvs.read_data(self.feedback):
             self.feedback = "None"
 
@@ -43,22 +44,16 @@ class ipico_node(Node):
         self.velocity["angular"]["x"] = msg.angular.x
         self.velocity["angular"]["y"] = msg.angular.y
         self.velocity["angular"]["z"] = msg.angular.z
-        # print them as logs:
-        #print(self.velocity)
         # set update flag
         self.update = True
         # calculate motors values:
         self.teleop.velocity = self.velocity
-        self.ipico_drvs.move_command(move_type=self.ipico_drvs.move_type.velocity.value, action_type=self.ipico_drvs.action_type.set.value,value=self.teleop.motor_request["M1"])
-        self.ipico_drvs.move_command(move_type=self.ipico_drvs.move_type.velocity.value, action_type=self.ipico_drvs.action_type.set.value,value=self.teleop.motor_request["M2"],driver_nr=2)
-        self.teleop.motor["M1"] = self.teleop.motor_request["M1"]
-        self.teleop.motor["M2"] = self.teleop.motor_request["M2"]
     def construct_string_msg(self,arg_string):
         msg = String()
         msg.data = arg_string
         return msg
 
-class ipico_drvs():
+class ipico_drvs(threading.Thread):
     class action_type(Enum):
         get = False
         set = True
@@ -88,8 +83,10 @@ class ipico_drvs():
             "vel":'drv_VEL='
         }
         self.__last_command = self.cmd()
+        self.initialized = False
         self.ros_node = node
-        self.drvs_init_procedure()
+        threading.Thread.__init__(self)
+        threading.Thread.start(self)
 
     def check_connection(self):
         i = 0
@@ -101,9 +98,12 @@ class ipico_drvs():
             if i > 10:
                 return True #here should be False
             i = i + 1
+            print("waiting..")
             sleep(1)
         #response obtained
+        print("Connection checked! - All good")
         # TODO: procedure for identify response:
+        self.ros_node.rx_update = False
         return True
 
     def drvs_init_procedure(self):
@@ -113,6 +113,9 @@ class ipico_drvs():
         # second start drivers
         self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["start"]))
         self.remember_command("start")
+        print("IPICO DRIVER Initialized!")
+        self.initialized = True
+        self.ros_node.rx_update = False
     # private function for checking if calling driver number is correct
     def __check_driver_number(self, driver_nr):
         if driver_nr > 2:
@@ -170,7 +173,7 @@ class ipico_drvs():
             "M2" : 0
         }
         #iterate through 2 motors
-        for n in range (1,2):
+        for n in range (1,3):
             #send command for getting velocity from motor n
             self.move_command(driver_nr=n)
             i = 0
@@ -183,14 +186,97 @@ class ipico_drvs():
                 sleep(1)
             # if data appears then check it and pass it to variable
             if self.feedback["Name"] == "vel" and self.__last_command.action_type == self.action_type.get.value:
-                txt = "M" + n
-                motor[txt] = self.feedback["Value"]
+                txt = "M" + str(n)
+                motor[txt] = int(self.feedback["Value"])
+                print(motor)
+                self.ros_node.rx_update = False
             else:
                 raise Exception("Bad feedback")
         return motor
+    def run(self):
+        self.drvs_init_procedure()
      # when deleting object: stop drivers
     def __del__(self):
+        self.ros_node.teleop.end = True
         self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["stop"]))
+
+class teleop_twist(threading.Thread):
+    def __init__(self,arg_node):
+        self.velocity = {
+            "linear" : {"x":0.0,"y":0.0,"z":0.0},
+            "angular": {"x":0.0,"y":0.0,"z":0.0},
+        }
+        self.motor = {
+            "M1" : 0,
+            "M2" : 0
+        }
+        self.motor_goal = {
+            "M1" : 0,
+            "M2" : 0
+        }
+        self.motor_request = {
+            "M1" : 0,
+            "M2" : 0
+        }
+        self.const = 1
+        self.ack = False
+        self.reached = False
+        self.end = False
+        self.ros_node = arg_node
+        threading.Thread.__init__(self)
+        threading.Thread.start(self)
+    def request_velocity(self):
+        self.__calculate(self.velocity)
+        print(self.motor_goal)
+        #self.ack = True
+        #self.reached = False
+        self.following_control()
+        print(self.motor_request)
+    def limit_speed(self, arg_speed):
+        #check if calculation for speed didnt reach the limit <-100,100>
+        if not arg_speed in range(-100,101):
+            #set to max limit lower/upper:
+            if arg_speed < 0:
+                return -100
+            else:
+                return 100
+        return arg_speed
+    #basic calculation template with linear function - transformation
+    def __calculate(self, arg_velocity):
+        # linear velocity calculation:
+        self.motor_goal["M1"] = arg_velocity["linear"]["x"] * 5
+        self.motor_goal["M2"] = self.motor_goal["M1"]
+        # angular velocity calculation:
+        self.motor_goal["M1"] = round(arg_velocity["angular"]["z"] * 5 + self.motor_goal["M1"])
+        self.motor_goal["M2"] = round(arg_velocity["angular"]["z"] * -5 + self.motor_goal["M2"])
+        #check if calculation for M1 and M2 didnt reach the limit <-100,100>
+        for motor_key in self.motor_goal:
+            self.motor_goal[motor_key] = self.limit_speed(self.motor_goal[motor_key])
+    def run(self):
+        while not self.ros_node.ipico_drvs.initialized:
+            print("Waiting for ipico driver init...")
+            sleep(1)
+        while True:
+            self.motor = self.ros_node.ipico_drvs.get_vels()
+            self.request_velocity()
+            #send data through uart by ipico drivers
+            if self.end:
+                return
+
+    #following control function for smoothly controling motors
+    def following_control(self):
+        for motor_key in self.motor_goal:
+            #estabilishing if alorithm need to acc or deacc velocity to reach goal
+            coeff = -1
+            if self.motor_goal[motor_key] < self.motor[motor_key]:
+                coeff = 1
+            #calculate new requested velocity for motor:
+            self.motor_request[motor_key] = self.motor[motor_key] + (coeff * self.const)
+            #limit requested velocity:
+            self.motor_request[motor_key] = self.limit_speed(self.motor_request[motor_key])       
+
+    def __del__(self):
+        self.end = True
 
 def main(arg=None):
     rclpy.init(args=arg)
