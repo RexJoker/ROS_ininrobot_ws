@@ -30,7 +30,8 @@ class ipico_node(Node):
     def uart_callback(self, msg):
         self.feedback = msg.data
         self.rx_update = True
-        self.ipico_drvs.read_data(self.feedback)
+        if self.ipico_drvs.read_data(self.feedback):
+            self.feedback = "None"
 
     def cmd_vel_callback(self, msg):
         # rewriting data from geometry_msg to class variable
@@ -155,7 +156,9 @@ class ipico_drvs():
     def read_data(self, arg_msg):
         self.feedback["Name"] = self.__last_command.name
         self.feedback["Value"] = arg_msg
-    # when deleting object: stop drivers
+        if not self.feedback["Value"] == arg_msg:
+            return False
+        return True
     def remember_command(self, arg_name, arg_move_type = None, arg_action_type = None, arg_driver_nr = 0):
         self.__last_command.name = arg_name
         self.__last_command.move_type = arg_move_type
@@ -185,6 +188,7 @@ class ipico_drvs():
             else:
                 raise Exception("Bad feedback")
         return motor
+     # when deleting object: stop drivers
     def __del__(self):
         self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["stop"]))
 
