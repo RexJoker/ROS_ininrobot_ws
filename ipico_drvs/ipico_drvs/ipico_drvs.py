@@ -1,6 +1,8 @@
+from email.quoprimime import body_check
 from enum import Enum
 from time import sleep
 from typing import NamedTuple
+from xmlrpc.client import boolean
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist as BSmart #easter egg
@@ -30,7 +32,6 @@ class ipico_node(Node):
     def uart_callback(self, msg):
         self.feedback = msg.data
         self.rx_update = True
-        print(self.rx_update)
         if self.ipico_drvs.read_data(self.feedback):
             self.feedback = "None"
 
@@ -48,6 +49,7 @@ class ipico_node(Node):
         self.update = True
         # calculate motors values:
         self.teleop.velocity = self.velocity
+        self.teleop.reached = False
     def construct_string_msg(self,arg_string):
         msg = String()
         msg.data = arg_string
@@ -188,7 +190,6 @@ class ipico_drvs(threading.Thread):
             if self.feedback["Name"] == "vel" and self.__last_command.action_type == self.action_type.get.value:
                 txt = "M" + str(n)
                 motor[txt] = int(self.feedback["Value"])
-                print(motor)
                 self.ros_node.rx_update = False
             else:
                 raise Exception("Bad feedback")
@@ -201,37 +202,35 @@ class ipico_drvs(threading.Thread):
         self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["stop"]))
 
 class teleop_twist(threading.Thread):
+    class offset(Enum):
+        LL_OFF = -2
+        HH_OFF = 2
     def __init__(self,arg_node):
         self.velocity = {
             "linear" : {"x":0.0,"y":0.0,"z":0.0},
             "angular": {"x":0.0,"y":0.0,"z":0.0},
         }
         self.motor = {
-            "M1" : 0,
-            "M2" : 0
-        }
-        self.motor_goal = {
-            "M1" : 0,
-            "M2" : 0
-        }
-        self.motor_request = {
-            "M1" : 0,
-            "M2" : 0
+            "last" : {"M1":0 , "M2":0},
+            "actual" : {"M1":0 , "M2":0},
+            "goal": {"M1":0 , "M2":0},
+            "request": {"M1":0 , "M2":0}
         }
         self.const = 1
-        self.ack = False
-        self.reached = False
+        self.reached = True
         self.end = False
         self.ros_node = arg_node
         threading.Thread.__init__(self)
         threading.Thread.start(self)
     def request_velocity(self):
         self.__calculate(self.velocity)
-        print(self.motor_goal)
-        #self.ack = True
-        #self.reached = False
+        #print("Actual:")
+        #print(self.motor["actual"])
+        #print("Goal:")
+        #print(self.motor["goal"])
         self.following_control()
-        print(self.motor_request)
+        #print("Request:")
+        #print(self.motor["request"])
     def limit_speed(self, arg_speed):
         #check if calculation for speed didnt reach the limit <-100,100>
         if not arg_speed in range(-100,101):
@@ -244,36 +243,54 @@ class teleop_twist(threading.Thread):
     #basic calculation template with linear function - transformation
     def __calculate(self, arg_velocity):
         # linear velocity calculation:
-        self.motor_goal["M1"] = arg_velocity["linear"]["x"] * 5
-        self.motor_goal["M2"] = self.motor_goal["M1"]
+        self.motor["goal"]["M1"] = arg_velocity["linear"]["x"] * 5
+        self.motor["goal"]["M2"] = self.motor["goal"]["M1"]
         # angular velocity calculation:
-        self.motor_goal["M1"] = round(arg_velocity["angular"]["z"] * 5 + self.motor_goal["M1"])
-        self.motor_goal["M2"] = round(arg_velocity["angular"]["z"] * -5 + self.motor_goal["M2"])
+        self.motor["goal"]["M1"] = round(arg_velocity["angular"]["z"] * 5 + self.motor["goal"]["M1"])
+        self.motor["goal"]["M2"] = round(arg_velocity["angular"]["z"] * -5 + self.motor["goal"]["M2"])
         #check if calculation for M1 and M2 didnt reach the limit <-100,100>
-        for motor_key in self.motor_goal:
-            self.motor_goal[motor_key] = self.limit_speed(self.motor_goal[motor_key])
+        for motor_key in self.motor["goal"]:
+            self.motor["goal"][motor_key] = self.limit_speed(self.motor["goal"][motor_key])
     def run(self):
         while not self.ros_node.ipico_drvs.initialized:
             print("Waiting for ipico driver init...")
             sleep(1)
         while True:
-            self.motor = self.ros_node.ipico_drvs.get_vels()
-            self.request_velocity()
+            while not self.reached:
+                self.motor["last"] = self.motor["actual"]
+                self.motor["actual"] = self.ros_node.ipico_drvs.get_vels()
+                self.request_velocity()
+                if self.check_goal( self.motor["last"], self.motor["actual"], self.motor["goal"]):
+                    self.reached = True
+
             #send data through uart by ipico drivers
             if self.end:
                 return
 
     #following control function for smoothly controling motors
     def following_control(self):
-        for motor_key in self.motor_goal:
+        for motor_key in self.motor["goal"]:
             #estabilishing if alorithm need to acc or deacc velocity to reach goal
             coeff = -1
-            if self.motor_goal[motor_key] < self.motor[motor_key]:
+            if self.motor["goal"][motor_key] > self.motor["actual"][motor_key]:
                 coeff = 1
             #calculate new requested velocity for motor:
-            self.motor_request[motor_key] = self.motor[motor_key] + (coeff * self.const)
+            self.motor["request"][motor_key] = self.motor["actual"][motor_key] + (coeff * self.const)
             #limit requested velocity:
-            self.motor_request[motor_key] = self.limit_speed(self.motor_request[motor_key])       
+            self.motor["request"][motor_key] = self.limit_speed(self.motor["request"][motor_key])       
+
+    def check_goal(self, arg_LastMotor, arg_ActMotor, arg_GoalMotor):
+        boolean_motors = [False, False]
+        i = 0
+        for motor_key in arg_ActMotor:
+            if arg_ActMotor[motor_key] in range((arg_GoalMotor[motor_key] + self.offset.LL_OFF.value),(arg_GoalMotor[motor_key] + self.offset.HH_OFF.value)):
+                boolean_motors[i] = True
+            i = i + 1
+            #2nd reason to return true: when the motors is not making any better results
+
+        if boolean_motors[0] and boolean_motors[1]:
+            return True
+        return False
 
     def __del__(self):
         self.end = True
