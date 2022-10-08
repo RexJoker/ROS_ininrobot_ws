@@ -168,7 +168,7 @@ class ipico_drvs(threading.Thread):
                     raise Exception("Wait for response too long")
                 sleep(1)
                 i += 1
-            # if data appears then check it and pass it to variable
+            # if data appears then check it(just to be sure it's the correct data) and pass it to variable
             if self.feedback["Name"] == "vel" and self.__last_command.action_type == self.action_type.get.value:
                 txt = "M" + str(n)
                 motor[txt] = int(self.feedback["Value"])
@@ -176,6 +176,7 @@ class ipico_drvs(threading.Thread):
             else:
                 raise Exception("Bad feedback")
         return motor
+    #main thread function for init procedure
     def run(self):
         self.drvs_init_procedure()
         return
@@ -201,13 +202,13 @@ class teleop_twist(threading.Thread):
         self.ros_node = arg_node
         threading.Thread.__init__(self,daemon=True)
         threading.Thread.start(self)
-
+    #function for calculating data, request velocities and send commands
     def request_velocity(self):
         self.__calculate(self.velocity)
         self.following_control()
         self.ros_node.ipico_drvs.move_command(action_type = self.ros_node.ipico_drvs.action_type.set.value, driver_nr = 1, value = self.motor["request"]["M1"])
         self.ros_node.ipico_drvs.move_command(action_type = self.ros_node.ipico_drvs.action_type.set.value, driver_nr = 2, value = self.motor["request"]["M2"])
-
+    #typical function for limiting data speeds of motors 
     def limit_speed(self, arg_speed):
         #check if calculation for speed didnt reach the limit <-100,100>
         if not arg_speed in range(-100,101):
@@ -232,17 +233,24 @@ class teleop_twist(threading.Thread):
     def run(self):
         attempts = 0
         print("Thread: Waiting for ipico driver init...")
+        #wait for init ipico_drvs:
         while not self.ros_node.ipico_drvs.initialized:
+            #if driver didnt get response after 10 seconds then print error and end
             if attempts > 10:
                 print("Thread:Something goes wrong with ipico_drvs init, ending..")
                 return
             attempts += 1
             sleep(1)
+        #main thread loop:
         while True:
+            #if velocity data points didnt reached goal:
             while not self.reached:
+                #remember last velocities:
                 self.motor["last"] = self.motor["actual"]
+                #get new ones:
                 self.motor["actual"] = self.ros_node.ipico_drvs.get_vels()
                 self.request_velocity()
+                #if new values of motor reach goal then stop:
                 if self.check_goal( self.motor["last"], self.motor["actual"], self.motor["goal"]):
                     self.reached = True
 
@@ -261,16 +269,18 @@ class teleop_twist(threading.Thread):
             self.motor["request"][motor_key] = self.motor["actual"][motor_key] + (coeff * self.const)
             #limit requested velocity:
             self.motor["request"][motor_key] = self.limit_speed(self.motor["request"][motor_key])       
-
+    #check function for reaching the goal of velocity data points of motors:
     def check_goal(self, arg_LastMotor, arg_ActMotor, arg_GoalMotor):
         boolean_motors = [False, False]
         i = 0
+        #check every motor for:
         for motor_key in arg_ActMotor:
+            #for reaching the goal in specific range (<goal-1,goal+1>)
             if arg_ActMotor[motor_key] in range((arg_GoalMotor[motor_key] + self.offset.LL_OFF.value),(arg_GoalMotor[motor_key] + self.offset.HH_OFF.value)):
                 boolean_motors[i] = True
             i = i + 1
             #2nd reason to return true: when the motors is not making any better results
-
+        #if actual motor velocity data is correct then return true:
         if boolean_motors[0] and boolean_motors[1]:
             return True
         return False
