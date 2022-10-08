@@ -87,7 +87,7 @@ class ipico_drvs(threading.Thread):
         self.__last_command = self.cmd()
         self.initialized = False
         self.ros_node = node
-        threading.Thread.__init__(self)
+        threading.Thread.__init__(self,daemon=True)
         threading.Thread.start(self)
 
     def check_connection(self):
@@ -99,7 +99,7 @@ class ipico_drvs(threading.Thread):
         while not self.ros_node.rx_update:
             if i > 10:
                 return True #here should be False
-            i = i + 1
+            i += 1
             print("waiting..")
             sleep(1)
         #response obtained
@@ -139,25 +139,6 @@ class ipico_drvs(threading.Thread):
         self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(cmd))
         #remember last command:
         self.remember_command(move_type,arg_move_type=move_type,arg_action_type=action_type,arg_driver_nr=driver_nr)
-    
-    def send_command(self, request):
-        # check if request is command
-        if not request in self.request_commands:
-            print("There are not such a command in list")
-            return False
-        # if its pose or velocity command then realize standard procedure for both drivers
-        if request == self.move_type.step.value:
-            self.move_command(move_type=self.move_type.step.value)
-            self.move_command(move_type=self.move_type.step.value,driver_nr=2)
-            return True
-        if request == self.move_type.velocity.value:
-            self.move_command(move_type=self.move_type.velocity.value)
-            self.move_command(move_type=self.move_type.velocity.value,driver_nr=2)
-            return True
-        self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands[request]))
-        #remember last command:
-        self.remember_command(request)
-        return True
     def read_data(self, arg_msg):
         self.feedback["Name"] = self.__last_command.name
         self.feedback["Value"] = arg_msg
@@ -186,6 +167,7 @@ class ipico_drvs(threading.Thread):
                     #if there is no any msg to recievie then its bad
                     raise Exception("Wait for response too long")
                 sleep(1)
+                i += 1
             # if data appears then check it and pass it to variable
             if self.feedback["Name"] == "vel" and self.__last_command.action_type == self.action_type.get.value:
                 txt = "M" + str(n)
@@ -196,10 +178,7 @@ class ipico_drvs(threading.Thread):
         return motor
     def run(self):
         self.drvs_init_procedure()
-     # when deleting object: stop drivers
-    def __del__(self):
-        self.ros_node.teleop.end = True
-        self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["stop"]))
+        return
 
 class teleop_twist(threading.Thread):
     class offset(Enum):
@@ -220,17 +199,15 @@ class teleop_twist(threading.Thread):
         self.reached = True
         self.end = False
         self.ros_node = arg_node
-        threading.Thread.__init__(self)
+        threading.Thread.__init__(self,daemon=True)
         threading.Thread.start(self)
+
     def request_velocity(self):
         self.__calculate(self.velocity)
-        #print("Actual:")
-        #print(self.motor["actual"])
-        #print("Goal:")
-        #print(self.motor["goal"])
         self.following_control()
-        #print("Request:")
-        #print(self.motor["request"])
+        self.ros_node.ipico_drvs.move_command(action_type = self.ros_node.ipico_drvs.action_type.set.value, driver_nr = 1, value = self.motor["request"]["M1"])
+        self.ros_node.ipico_drvs.move_command(action_type = self.ros_node.ipico_drvs.action_type.set.value, driver_nr = 2, value = self.motor["request"]["M2"])
+
     def limit_speed(self, arg_speed):
         #check if calculation for speed didnt reach the limit <-100,100>
         if not arg_speed in range(-100,101):
@@ -251,9 +228,15 @@ class teleop_twist(threading.Thread):
         #check if calculation for M1 and M2 didnt reach the limit <-100,100>
         for motor_key in self.motor["goal"]:
             self.motor["goal"][motor_key] = self.limit_speed(self.motor["goal"][motor_key])
+    #run function which is main thread func.
     def run(self):
+        attempts = 0
+        print("Thread: Waiting for ipico driver init...")
         while not self.ros_node.ipico_drvs.initialized:
-            print("Waiting for ipico driver init...")
+            if attempts > 10:
+                print("Thread:Something goes wrong with ipico_drvs init, ending..")
+                return
+            attempts += 1
             sleep(1)
         while True:
             while not self.reached:
