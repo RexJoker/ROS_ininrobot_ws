@@ -7,7 +7,7 @@ from std_msgs.msg import String
 class uart_com():
     def __init__(self):
         self.port = '/dev/ttyAMA1'
-        self.timeout = 0.1
+        self.timeout = 0.01
         # TODO: #1 baudrate = 115200 8n2
         self.uart = serial.Serial(self.port,timeout=self.timeout)
     def recieve(self):
@@ -41,7 +41,7 @@ class uart_ros(Node):
         self.subscriber = self.create_subscription(String, 'UARTTX_topic', self.topic_callback, 10)
         self.publisher = self.create_publisher(String, 'UARTRX_topic', 10)
         self.uart_obj = uart_com()
-        timer_period = 0.1  # seconds
+        timer_period = 0.01  # seconds
         self.timer = self.create_timer(timer_period, self.timer_callback)
         self.i = 0
         self.subscriber
