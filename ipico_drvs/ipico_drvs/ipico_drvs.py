@@ -1,6 +1,7 @@
 from email.quoprimime import body_check
 from enum import Enum
 from time import sleep
+import time
 from typing import NamedTuple
 from xmlrpc.client import boolean
 import rclpy
@@ -197,11 +198,20 @@ class teleop_twist(threading.Thread):
             "request": {"M1":0 , "M2":0}
         }
         self.const = 1
+        self.last_time = 0.000 
+        self.delay_time = 0.2 #delay time specified in seconds
         self.reached = True
         self.end = False
         self.ros_node = arg_node
         threading.Thread.__init__(self,daemon=True)
         threading.Thread.start(self)
+    #check function for delaying changes into speeds of motors
+    def is_time_delayed(self):
+        rn_time = time.time()
+        if(rn_time - self.last_time) > self.delay_time:
+            self.last_time = rn_time
+            return True
+        return False
     #function for calculating data, request velocities and send commands
     def request_velocity(self):
         self.__calculate(self.velocity)
@@ -245,14 +255,15 @@ class teleop_twist(threading.Thread):
         while True:
             #if velocity data points didnt reached goal:
             while not self.reached:
-                #remember last velocities:
-                self.motor["last"] = self.motor["actual"]
-                #get new ones:
-                self.motor["actual"] = self.ros_node.ipico_drvs.get_vels()
-                self.request_velocity()
-                #if new values of motor reach goal then stop:
-                if self.check_goal( self.motor["last"], self.motor["actual"], self.motor["goal"]):
-                    self.reached = True
+                if self.is_time_delayed():
+                    #remember last velocities:
+                    self.motor["last"] = self.motor["actual"]
+                    #get new ones:
+                    self.motor["actual"] = self.ros_node.ipico_drvs.get_vels()
+                    self.request_velocity()
+                    #if new values of motor reach goal then stop:
+                    if self.check_goal( self.motor["last"], self.motor["actual"], self.motor["goal"]):
+                        self.reached = True
 
             #send data through uart by ipico drivers
             if self.end:
