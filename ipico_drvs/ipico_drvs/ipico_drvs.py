@@ -33,6 +33,7 @@ class ipico_node(Node):
     def uart_callback(self, msg):
         self.feedback = msg.data
         self.rx_update = True
+        #TODO: maybe read data and if statments for other then commands like step,start,stop
         if self.ipico_drvs.read_data(self.feedback):
             self.feedback = "None"
 
@@ -105,7 +106,7 @@ class ipico_drvs(threading.Thread):
             sleep(1)
         #response obtained
         print("Connection checked! - All good")
-        # TODO: procedure for identify response:
+        # TODO: procedure for identify response: --read data ("OK/r/n") answer
         self.ros_node.rx_update = False
         return True
 
@@ -116,6 +117,7 @@ class ipico_drvs(threading.Thread):
         # second start drivers
         self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["start"]))
         self.remember_command("start")
+        #TODO: get vels and step to update parameters of object
         print("IPICO DRIVER Initialized!")
         self.initialized = True
         self.ros_node.rx_update = False
