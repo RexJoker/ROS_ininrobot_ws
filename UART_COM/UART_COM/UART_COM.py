@@ -6,10 +6,15 @@ from std_msgs.msg import String
 
 class uart_com():
     def __init__(self):
+        # UART Configuration: 115200 8n2
         self.port = '/dev/ttyAMA1'
         self.timeout = 0.01
-        # TODO: #1 baudrate = 115200 8n2
+        self.baudrate = 115200
+        self.parity = serial.PARITY_NONE
+        self.stop_bits = 2
         self.uart = serial.Serial(self.port,timeout=self.timeout)
+        self.uart.parity = self.parity
+        self.uart.stopbits = self.stop_bits
     def recieve(self):
         # gather full line of data through UART
         response = self.uart.readline()
