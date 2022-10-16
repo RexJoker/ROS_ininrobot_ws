@@ -100,7 +100,7 @@ class ipico_drvs(threading.Thread):
         print("Waiting for check connection response..")
         while not self.ros_node.rx_update:
             if i > 10:
-                return True #here should be False
+                return False
             i += 1
             print("waiting..")
             sleep(1)
