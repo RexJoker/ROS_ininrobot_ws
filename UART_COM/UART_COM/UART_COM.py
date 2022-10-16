@@ -6,13 +6,13 @@ from std_msgs.msg import String
 
 class uart_com():
     def __init__(self):
-        # UART Configuration: 115200 8n2
+        # UART Configuration: 115200 8n1
         self.port = '/dev/ttyAMA1'
         self.timeout = 0.01
         self.baudrate = 115200
         self.parity = serial.PARITY_NONE
-        self.stop_bits = 2
-        self.uart = serial.Serial(self.port,timeout=self.timeout)
+        self.stop_bits = 1
+        self.uart = serial.Serial(self.port,self.baudrate,timeout=self.timeout)
         self.uart.parity = self.parity
         self.uart.stopbits = self.stop_bits
     def recieve(self):
