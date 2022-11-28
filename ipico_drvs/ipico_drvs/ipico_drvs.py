@@ -33,9 +33,22 @@ class ipico_node(Node):
     def uart_callback(self, msg):
         self.feedback = msg.data
         self.rx_update = True
-        #TODO: maybe read data and if statments for other then commands like step,start,stop
-        if self.ipico_drvs.read_data(self.feedback):
+        # if there was command for getting data then read it:
+        if self.ipico_drvs.last_command.action_type == self.ipico_drvs.action_type.get.value:
+            self.ipico_drvs.read_data(self.feedback)
+    #check for response function to look if the text answer is as expected
+    def check_for_response(self, expected_answer = "OK"):
+        i = 0
+        while not self.rx_update:
+            if i > 10:
+                return False
+            i += 1
+            sleep(0.1)
+        if self.feedback == expected_answer:
             self.feedback = "None"
+            self.rx_update = False
+            return True
+        return False
 
     def cmd_vel_callback(self, msg):
         # rewriting data from geometry_msg to class variable
@@ -76,17 +89,18 @@ class ipico_drvs(threading.Thread):
             "Value" : 0
         }
         self.request_commands = {
-            "check":'drv_CHECK\n',
-            "start":'drv_START\n',
-            "stop":'drv_STOP\n',
-            "run":'drv_RUN\n',
-            "safety_stop":'drv_SAFETY_STOP\n',
-            "fullstep":'drv_FSTEP\n',
-            "halfstep":'drv_HSTEP\n',
+            "check":'drv_CHECK',
+            "start":'drv_ENABLE',
+            "disable" : 'drv_DISABLE',
+            "stop":'drv_STOP',
+            "run":'drv_RUN',
+            "safety_stop":'drv_SAFETY_STOP',
+            "fullstep":'drv_FSTEP',
+            "halfstep":'drv_HSTEP',
             "step":'drv_STEP=',
             "vel":'drv_VEL='
         }
-        self.__last_command = self.cmd()
+        self.last_command = self.cmd()
         self.initialized = False
         self.ros_node = node
         threading.Thread.__init__(self,daemon=True)
@@ -96,6 +110,7 @@ class ipico_drvs(threading.Thread):
         i = 0
         # send check command via uart to pico_drvs
         self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["check"]))
+        self.remember_command("check")
         # wait for response - 10 seconds
         print("Waiting for check connection response..")
         while not self.ros_node.rx_update:
@@ -104,19 +119,46 @@ class ipico_drvs(threading.Thread):
             i += 1
             print("waiting..")
             sleep(1)
+        # response check:
+        if not self.ros_node.check_for_response():
+            print("Missing response after sending check connection command")
         #response obtained
         print("Connection checked! - All good")
-        # TODO: procedure for identify response: --read data ("OK/r/n") answer
-        self.ros_node.rx_update = False
         return True
-
+    #basic init procedure:
     def drvs_init_procedure(self):
+        error_flag = False
         # first check connection with command
         if not self.check_connection():
-            raise Exception("Check connection procedure failed")
+            print("Check connection procedure failed")
+            print("Trying to resolve problem..")
+            #trying to solve problem by sending some control commands:
+            self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["stop"]))
+            self.remember_command("stop")
+            sleep(0.1)
+            self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["disable"]))
+            self.remember_command("disable")
+            self.ros_node.rx_update = False
+            if not self.check_connection():
+                raise Exception("Check connection procedure failed")
         # second start drivers
+        self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["fullstep"]))
+        self.remember_command("fullstep")
+        if not self.ros_node.check_for_response():
+            print("Missing response after sending fullstep command")
+            error_flag = True
+        sleep(0.1)
         self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["start"]))
         self.remember_command("start")
+        if not self.ros_node.check_for_response(expected_answer="--"):
+            print("Missing response after sending enable command")
+            error_flag = True
+        sleep(0.1)
+        self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["run"]))
+        self.remember_command("run")
+        if not self.ros_node.check_for_response():
+            print("Missing response after sending run command")
+            error_flag = True
         #TODO: get vels and step to update parameters of object
         print("IPICO DRIVER Initialized!")
         self.initialized = True
@@ -135,24 +177,24 @@ class ipico_drvs(threading.Thread):
         self.__check_driver_number(driver_nr=driver_nr)
         #building command related to action type
         if not action_type:
-            cmd = cmd + str(driver_nr) + ',?\n'
+            cmd = cmd + str(driver_nr) + ',?'
         else:
-            cmd = cmd + str(driver_nr) + ',' + str(value) + '\n'
+            cmd = cmd + str(driver_nr) + ',' + str(value)
         #send prepared command
         self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(cmd))
         #remember last command:
         self.remember_command(move_type,arg_move_type=move_type,arg_action_type=action_type,arg_driver_nr=driver_nr)
     def read_data(self, arg_msg):
-        self.feedback["Name"] = self.__last_command.name
+        self.feedback["Name"] = self.last_command.name
         self.feedback["Value"] = arg_msg
         if not self.feedback["Value"] == arg_msg:
             return False
         return True
     def remember_command(self, arg_name, arg_move_type = None, arg_action_type = None, arg_driver_nr = 0):
-        self.__last_command.name = arg_name
-        self.__last_command.move_type = arg_move_type
-        self.__last_command.action_type = arg_action_type
-        self.__last_command.motor_number = arg_driver_nr
+        self.last_command.name = arg_name
+        self.last_command.move_type = arg_move_type
+        self.last_command.action_type = arg_action_type
+        self.last_command.motor_number = arg_driver_nr
     def get_vels(self):
         motor = {
             "M1" : 0,
@@ -168,16 +210,18 @@ class ipico_drvs(threading.Thread):
                 #try 5 times every 1 second to get data
                 if i > 5:
                     #if there is no any msg to recievie then its bad
-                    raise Exception("Wait for response too long")
-                sleep(1)
+                    #raise Exception("Wait for response too long")
+                    print("Waited for get vel response too long")
+                sleep(0.1)
                 i += 1
             # if data appears then check it(just to be sure it's the correct data) and pass it to variable
-            if self.feedback["Name"] == "vel" and self.__last_command.action_type == self.action_type.get.value:
+            if self.feedback["Name"] == "vel" and self.last_command.action_type == self.action_type.get.value:
                 txt = "M" + str(n)
                 motor[txt] = int(self.feedback["Value"])
                 self.ros_node.rx_update = False
             else:
-                raise Exception("Bad feedback")
+                #raise Exception("Bad feedback")
+                print("Bad get vel feedback")
         return motor
     #main thread function for init procedure
     def run(self):
@@ -201,7 +245,7 @@ class teleop_twist(threading.Thread):
         }
         self.const = 1
         self.last_time = 0.000 
-        self.delay_time = 0.2 #delay time specified in seconds
+        self.delay_time = 0.1 #delay time specified in seconds
         self.reached = True
         self.end = False
         self.ros_node = arg_node
@@ -216,10 +260,18 @@ class teleop_twist(threading.Thread):
         return False
     #function for calculating data, request velocities and send commands
     def request_velocity(self):
+        error_flag = False
         self.__calculate(self.velocity)
         self.following_control()
         self.ros_node.ipico_drvs.move_command(action_type = self.ros_node.ipico_drvs.action_type.set.value, driver_nr = 1, value = self.motor["request"]["M1"])
+        if not self.ros_node.check_for_response():
+            print("Missing response after sending move command")
+            error_flag = True
         self.ros_node.ipico_drvs.move_command(action_type = self.ros_node.ipico_drvs.action_type.set.value, driver_nr = 2, value = self.motor["request"]["M2"])
+        if not self.ros_node.check_for_response():
+            print("Missing response after sending move command")
+            error_flag = True
+        
     #typical function for limiting data speeds of motors 
     def limit_speed(self, arg_speed):
         #check if calculation for speed didnt reach the limit <-100,100>
@@ -264,7 +316,7 @@ class teleop_twist(threading.Thread):
                     self.motor["actual"] = self.ros_node.ipico_drvs.get_vels()
                     self.request_velocity()
                     #if new values of motor reach goal then stop:
-                    if self.check_goal( self.motor["last"], self.motor["actual"], self.motor["goal"]):
+                    if self.check_goal(self.motor["last"], self.motor["actual"], self.motor["goal"]):
                         self.reached = True
 
             #send data through uart by ipico drivers
@@ -279,7 +331,10 @@ class teleop_twist(threading.Thread):
             if self.motor["goal"][motor_key] > self.motor["actual"][motor_key]:
                 coeff = 1
             #calculate new requested velocity for motor:
-            self.motor["request"][motor_key] = self.motor["actual"][motor_key] + (coeff * self.const)
+            if abs(self.motor["goal"][motor_key] - self.motor["actual"][motor_key]) > 2:
+                self.motor["request"][motor_key] = self.motor["actual"][motor_key] + (coeff * 2)
+            else:
+                self.motor["request"][motor_key] = self.motor["actual"][motor_key] + (coeff * self.const)
             #limit requested velocity:
             self.motor["request"][motor_key] = self.limit_speed(self.motor["request"][motor_key])       
     #check function for reaching the goal of velocity data points of motors:
