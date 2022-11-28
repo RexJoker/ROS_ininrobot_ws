@@ -19,17 +19,25 @@ class uart_com():
         # gather full line of data through UART
         response = self.uart.readline()
         str_response = response.decode("utf-8")
-        # split response from ending characters \r\n
-        if str_response.find('\r\n') != -1:
-            message = str_response.split('\r\n')
-            return str(message[0])
+        # remove useless characters: (such as \n or \r) and check if message recieved.
+        if str_response.find('\n') != -1:
+            return self.convert_data(str_response)
         return "NULL"
-        return single_msg
+    def convert_data(self, input_text):
+        # search for \r:
+        str1 = "\r"
+        if str1 in input_text:
+            input_text = input_text.replace(str1,'')
+         # search for \n:
+        str2 = "\n"
+        if str2 in input_text:
+            input_text = input_text.replace(str2,'')
+        return input_text
     def send(self, arg_msg):
         #try to convert msg to string
         try:
             str_msg = str(arg_msg)
-            str_msg = str_msg + '\r\n'
+            str_msg = str_msg + '\n'
         except:
             # break sending when data cant be converted
             return
