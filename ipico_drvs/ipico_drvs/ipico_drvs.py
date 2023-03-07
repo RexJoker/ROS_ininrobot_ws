@@ -97,7 +97,7 @@ class ipico_drvs(threading.Thread):
             "safety_stop":'drv_SAFETY_STOP',
             "fullstep":'drv_FSTEP',
             "halfstep":'drv_HSTEP',
-            "step":'drv_STEP=',
+            "step":'drv_POS=',
             "vel":'drv_VEL='
         }
         self.last_command = self.cmd()
@@ -160,6 +160,13 @@ class ipico_drvs(threading.Thread):
             print("Missing response after sending run command")
             error_flag = True
         #TODO: get vels and step to update parameters of object
+                
+        #TODO: Dynamic POS value
+        sleep(0.1)
+        self.ros_node.ipico_drvs.move_command(move_type=self.ros_node.ipico_drvs.move_type.step.value, action_type=self.ros_node.ipico_drvs.action_type.set.value, driver_nr=1,value=100)
+        sleep(0.1)
+        self.ros_node.ipico_drvs.move_command(move_type=self.ros_node.ipico_drvs.move_type.step.value, action_type=self.ros_node.ipico_drvs.action_type.set.value, driver_nr=2,value=100)
+        
         print("IPICO DRIVER Initialized!")
         self.initialized = True
         self.ros_node.rx_update = False
@@ -184,6 +191,7 @@ class ipico_drvs(threading.Thread):
         self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(cmd))
         #remember last command:
         self.remember_command(move_type,arg_move_type=move_type,arg_action_type=action_type,arg_driver_nr=driver_nr)
+
     def read_data(self, arg_msg):
         self.feedback["Name"] = self.last_command.name
         self.feedback["Value"] = arg_msg
