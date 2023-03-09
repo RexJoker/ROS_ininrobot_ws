@@ -252,6 +252,8 @@ class teleop_twist(threading.Thread):
             "request": {"M1":0 , "M2":0}
         }
         self.const = 1
+        self.delays = 0
+        self.delays2 = 0
         self.last_time = 0.000 
         self.delay_time = 0.1 #delay time specified in seconds
         self.reached = True
@@ -321,8 +323,14 @@ class teleop_twist(threading.Thread):
                     #remember last velocities:
                     self.motor["last"] = self.motor["actual"]
                     #get new ones:
-                    self.motor["actual"] = self.ros_node.ipico_drvs.get_vels()
+                    if self.delays2 > 2:
+                        self.delays2 = 0
+                        self.motor["actual"] = self.ros_node.ipico_drvs.get_vels()
+                    else:
+                        self.motor["actual"] = self.motor["request"]
+                        self.delays2 = self.delays2 + 1
                     self.request_velocity()
+                    self.update_steps()
                     #if new values of motor reach goal then stop:
                     if self.check_goal(self.motor["last"], self.motor["actual"], self.motor["goal"]):
                         self.reached = True
@@ -330,7 +338,20 @@ class teleop_twist(threading.Thread):
             #send data through uart by ipico drivers
             if self.end:
                 return
-
+    # synchronous, forcing steps on drivers
+    def update_steps(self):
+        if self.delays > 2:
+            self.ros_node.ipico_drvs.move_command(move_type=self.ros_node.ipico_drvs.move_type.step.value, action_type=self.ros_node.ipico_drvs.action_type.set.value, driver_nr=1,value=100)
+            if not self.ros_node.check_for_response():
+                print("Missing response after sending move command")
+                error_flag = True
+            self.ros_node.ipico_drvs.move_command(move_type=self.ros_node.ipico_drvs.move_type.step.value, action_type=self.ros_node.ipico_drvs.action_type.set.value, driver_nr=2,value=100)
+            if not self.ros_node.check_for_response():
+                print("Missing response after sending move command")
+                error_flag = True
+            self.delays = 0
+        else:
+            self.delays = self.delays + 1
     #following control function for smoothly controling motors
     def following_control(self):
         for motor_key in self.motor["goal"]:
@@ -339,8 +360,12 @@ class teleop_twist(threading.Thread):
             if self.motor["goal"][motor_key] > self.motor["actual"][motor_key]:
                 coeff = 1
             #calculate new requested velocity for motor:
-            if abs(self.motor["goal"][motor_key] - self.motor["actual"][motor_key]) > 2:
-                self.motor["request"][motor_key] = self.motor["actual"][motor_key] + (coeff * 2)
+            abs_delta = abs(self.motor["goal"][motor_key] - self.motor["actual"][motor_key]) 
+            if abs_delta > 2:
+                step_value = abs_delta * 0.5
+                if step_value < 2:
+                    step_value = 1
+                self.motor["request"][motor_key] = self.motor["actual"][motor_key] + (coeff * int(step_value))
             else:
                 self.motor["request"][motor_key] = self.motor["actual"][motor_key] + (coeff * self.const)
             #limit requested velocity:
