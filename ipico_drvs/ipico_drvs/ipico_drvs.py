@@ -1,8 +1,6 @@
-from email.quoprimime import body_check
 from enum import Enum
 from time import sleep
 import time
-from typing import NamedTuple
 from xmlrpc.client import boolean
 import rclpy
 from rclpy.node import Node
@@ -113,17 +111,21 @@ class ipico_drvs(threading.Thread):
         self.remember_command("check")
         # wait for response - 10 seconds
         print("Waiting for check connection response..")
+        self.ros_node.get_logger().info("Waiting for check connection response..")
         while not self.ros_node.rx_update:
             if i > 10:
                 return False
             i += 1
             print("waiting..")
+            self.ros_node.get_logger().info("waiting..")
             sleep(1)
         # response check:
         if not self.ros_node.check_for_response():
             print("Missing response after sending check connection command")
+            self.ros_node.get_logger().info("Missing response after sending check connection command")
         #response obtained
         print("Connection checked! - All good")
+        self.ros_node.get_logger().info("Connection checked! - All good")
         return True
     #basic init procedure:
     def drvs_init_procedure(self):
@@ -132,6 +134,8 @@ class ipico_drvs(threading.Thread):
         if not self.check_connection():
             print("Check connection procedure failed")
             print("Trying to resolve problem..")
+            self.ros_node.get_logger().info("Check connection procedure failed")
+            self.ros_node.get_logger().info("Trying to resolve problem..")
             #trying to solve problem by sending some control commands:
             self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["stop"]))
             self.remember_command("stop")
@@ -146,18 +150,21 @@ class ipico_drvs(threading.Thread):
         self.remember_command("fullstep")
         if not self.ros_node.check_for_response():
             print("Missing response after sending fullstep command")
+            self.ros_node.get_logger().info("Missing response after sending fullstep command")
             error_flag = True
         sleep(0.1)
         self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["start"]))
         self.remember_command("start")
         if not self.ros_node.check_for_response(expected_answer="--"):
             print("Missing response after sending enable command")
+            self.ros_node.get_logger().info("Missing response after sending enable command")
             error_flag = True
         sleep(0.1)
         self.ros_node.uart_pub.publish(self.ros_node.construct_string_msg(self.request_commands["run"]))
         self.remember_command("run")
         if not self.ros_node.check_for_response():
             print("Missing response after sending run command")
+            self.ros_node.get_logger().info("Missing response after sending run command")
             error_flag = True
         #TODO: get vels and step to update parameters of object
                 
@@ -168,6 +175,7 @@ class ipico_drvs(threading.Thread):
         self.ros_node.ipico_drvs.move_command(move_type=self.ros_node.ipico_drvs.move_type.step.value, action_type=self.ros_node.ipico_drvs.action_type.set.value, driver_nr=2,value=100)
         
         print("IPICO DRIVER Initialized!")
+        self.ros_node.get_logger().info("IPICO DRIVER Initialized!")
         self.initialized = True
         self.ros_node.rx_update = False
     # private function for checking if calling driver number is correct
@@ -220,6 +228,7 @@ class ipico_drvs(threading.Thread):
                     #if there is no any msg to recievie then its bad
                     #raise Exception("Wait for response too long")
                     print("Waited for get vel response too long")
+                    self.ros_node.get_logger().info("Waited for get vel response too long")
                 sleep(0.1)
                 i += 1
             # if data appears then check it(just to be sure it's the correct data) and pass it to variable
@@ -230,6 +239,7 @@ class ipico_drvs(threading.Thread):
             else:
                 #raise Exception("Bad feedback")
                 print("Bad get vel feedback")
+                self.ros_node.get_logger().info("Bad get vel feedback")
         return motor
     #main thread function for init procedure
     def run(self):
@@ -282,11 +292,13 @@ class teleop_twist(threading.Thread):
             self.ros_node.ipico_drvs.move_command(action_type = self.ros_node.ipico_drvs.action_type.set.value, driver_nr = 1, value = abs(self.motor["request"]["M1"]))
             if not self.ros_node.check_for_response():
                 print("Missing response after sending move command")
+                self.ros_node.get_logger().info("Missing response after sending move command")
                 error_flag = True
         if self.motor["request"]["M2"] != 0:
             self.ros_node.ipico_drvs.move_command(action_type = self.ros_node.ipico_drvs.action_type.set.value, driver_nr = 2, value = abs(self.motor["request"]["M2"]))
             if not self.ros_node.check_for_response():
                 print("Missing response after sending move command")
+                self.ros_node.get_logger().info("Missing response after sending move command")
                 error_flag = True
         
     #typical function for limiting data speeds of motors 
@@ -302,11 +314,11 @@ class teleop_twist(threading.Thread):
     #basic calculation template with linear function - transformation
     def __calculate(self, arg_velocity):
         # linear velocity calculation:
-        self.motor["goal"]["M1"] = arg_velocity["linear"]["x"] * 5
+        self.motor["goal"]["M1"] = arg_velocity["linear"]["x"] * 40
         self.motor["goal"]["M2"] = self.motor["goal"]["M1"]
         # angular velocity calculation:
-        self.motor["goal"]["M1"] = round(arg_velocity["angular"]["z"] * 5 + self.motor["goal"]["M1"])
-        self.motor["goal"]["M2"] = round(arg_velocity["angular"]["z"] * -5 + self.motor["goal"]["M2"])
+        self.motor["goal"]["M1"] = round(arg_velocity["angular"]["z"] * 40 + self.motor["goal"]["M1"])
+        self.motor["goal"]["M2"] = round(arg_velocity["angular"]["z"] * -40 + self.motor["goal"]["M2"])
         #check if calculation for M1 and M2 didnt reach the limit <-100,100>
         for motor_key in self.motor["goal"]:
             self.motor["goal"][motor_key] = self.limit_speed(self.motor["goal"][motor_key])
@@ -314,11 +326,13 @@ class teleop_twist(threading.Thread):
     def run(self):
         attempts = 0
         print("Thread: Waiting for ipico driver init...")
+        self.ros_node.get_logger().info("Thread: Waiting for ipico driver init...")
         #wait for init ipico_drvs:
         while not self.ros_node.ipico_drvs.initialized:
             #if driver didnt get response after 10 seconds then print error and end
             if attempts > 10:
                 print("Thread:Something goes wrong with ipico_drvs init, ending..")
+                self.ros_node.get_logger().info("Thread:Something goes wrong with ipico_drvs init, ending..")
                 return
             attempts += 1
             sleep(1)
@@ -367,11 +381,13 @@ class teleop_twist(threading.Thread):
             self.ros_node.ipico_drvs.move_command(move_type=self.ros_node.ipico_drvs.move_type.step.value, action_type=self.ros_node.ipico_drvs.action_type.set.value, driver_nr=1,value=steps["M1"])
             if not self.ros_node.check_for_response():
                 print("Motor1 is busy")
+                self.ros_node.get_logger().info("Motor1 is busy")
                 error_flag = True
         if steps["M2"] != 0:
             self.ros_node.ipico_drvs.move_command(move_type=self.ros_node.ipico_drvs.move_type.step.value, action_type=self.ros_node.ipico_drvs.action_type.set.value, driver_nr=2,value=steps["M2"])
             if not self.ros_node.check_for_response():
                 print("Motor2 is busy")
+                self.ros_node.get_logger().info("Motor2 is busy")
                 error_flag = True
         # if self.delays > 5:
         #     self.ros_node.ipico_drvs.move_command(move_type=self.ros_node.ipico_drvs.move_type.step.value, action_type=self.ros_node.ipico_drvs.action_type.set.value, driver_nr=1,value=100)
