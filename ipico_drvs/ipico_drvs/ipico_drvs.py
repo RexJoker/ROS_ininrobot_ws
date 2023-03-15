@@ -272,15 +272,22 @@ class teleop_twist(threading.Thread):
     def request_velocity(self):
         error_flag = False
         self.__calculate(self.velocity)
-        self.following_control()
-        self.ros_node.ipico_drvs.move_command(action_type = self.ros_node.ipico_drvs.action_type.set.value, driver_nr = 1, value = self.motor["request"]["M1"])
-        if not self.ros_node.check_for_response():
-            print("Missing response after sending move command")
-            error_flag = True
-        self.ros_node.ipico_drvs.move_command(action_type = self.ros_node.ipico_drvs.action_type.set.value, driver_nr = 2, value = self.motor["request"]["M2"])
-        if not self.ros_node.check_for_response():
-            print("Missing response after sending move command")
-            error_flag = True
+        # self.following_control()
+        #temporary disabling following control and giving goal values to request
+        self.motor["request"]["M1"] = self.motor["goal"]["M1"]
+        self.motor["request"]["M2"] = self.motor["goal"]["M2"]
+        self.motor["request"]["M1"] = self.limit_speed(self.motor["request"]["M1"]) 
+        self.motor["request"]["M2"] = self.limit_speed(self.motor["request"]["M2"]) 
+        if self.motor["request"]["M1"] != 0:
+            self.ros_node.ipico_drvs.move_command(action_type = self.ros_node.ipico_drvs.action_type.set.value, driver_nr = 1, value = abs(self.motor["request"]["M1"]))
+            if not self.ros_node.check_for_response():
+                print("Missing response after sending move command")
+                error_flag = True
+        if self.motor["request"]["M2"] != 0:
+            self.ros_node.ipico_drvs.move_command(action_type = self.ros_node.ipico_drvs.action_type.set.value, driver_nr = 2, value = abs(self.motor["request"]["M2"]))
+            if not self.ros_node.check_for_response():
+                print("Missing response after sending move command")
+                error_flag = True
         
     #typical function for limiting data speeds of motors 
     def limit_speed(self, arg_speed):
@@ -321,14 +328,16 @@ class teleop_twist(threading.Thread):
             while not self.reached:
                 if self.is_time_delayed():
                     #remember last velocities:
+                    # self.motor["last"] = self.motor["actual"]
+                    self.motor["actual"] = self.motor["request"]
                     self.motor["last"] = self.motor["actual"]
                     #get new ones:
-                    if self.delays2 > 2:
-                        self.delays2 = 0
-                        self.motor["actual"] = self.ros_node.ipico_drvs.get_vels()
-                    else:
-                        self.motor["actual"] = self.motor["request"]
-                        self.delays2 = self.delays2 + 1
+                    # if self.delays2 > 2:
+                    #     self.delays2 = 0
+                    #     self.motor["actual"] = self.ros_node.ipico_drvs.get_vels()
+                    # else:
+                    #     self.motor["actual"] = self.motor["request"]
+                    #     self.delays2 = self.delays2 + 1
                     self.request_velocity()
                     self.update_steps()
                     #if new values of motor reach goal then stop:
@@ -340,18 +349,42 @@ class teleop_twist(threading.Thread):
                 return
     # synchronous, forcing steps on drivers
     def update_steps(self):
-        if self.delays > 2:
-            self.ros_node.ipico_drvs.move_command(move_type=self.ros_node.ipico_drvs.move_type.step.value, action_type=self.ros_node.ipico_drvs.action_type.set.value, driver_nr=1,value=100)
+        steps = {
+            "M1" : 100,
+            "M2" : 100
+        }
+        if self.motor["request"]["M1"] < 0:
+            steps["M1"] = -100
+        elif self.motor["request"]["M1"] == 0:
+            steps["M1"] = 0
+        
+        if self.motor["request"]["M2"] < 0:
+            steps["M2"] = -100
+        elif self.motor["request"]["M2"] == 0:
+            steps["M2"] = 0
+
+        if steps["M1"] != 0:
+            self.ros_node.ipico_drvs.move_command(move_type=self.ros_node.ipico_drvs.move_type.step.value, action_type=self.ros_node.ipico_drvs.action_type.set.value, driver_nr=1,value=steps["M1"])
             if not self.ros_node.check_for_response():
-                print("Missing response after sending move command")
+                print("Motor1 is busy")
                 error_flag = True
-            self.ros_node.ipico_drvs.move_command(move_type=self.ros_node.ipico_drvs.move_type.step.value, action_type=self.ros_node.ipico_drvs.action_type.set.value, driver_nr=2,value=100)
+        if steps["M2"] != 0:
+            self.ros_node.ipico_drvs.move_command(move_type=self.ros_node.ipico_drvs.move_type.step.value, action_type=self.ros_node.ipico_drvs.action_type.set.value, driver_nr=2,value=steps["M2"])
             if not self.ros_node.check_for_response():
-                print("Missing response after sending move command")
+                print("Motor2 is busy")
                 error_flag = True
-            self.delays = 0
-        else:
-            self.delays = self.delays + 1
+        # if self.delays > 5:
+        #     self.ros_node.ipico_drvs.move_command(move_type=self.ros_node.ipico_drvs.move_type.step.value, action_type=self.ros_node.ipico_drvs.action_type.set.value, driver_nr=1,value=100)
+        #     if not self.ros_node.check_for_response():
+        #         print("Motor1 is busy")
+        #         error_flag = True
+        #     self.ros_node.ipico_drvs.move_command(move_type=self.ros_node.ipico_drvs.move_type.step.value, action_type=self.ros_node.ipico_drvs.action_type.set.value, driver_nr=2,value=100)
+        #     if not self.ros_node.check_for_response():
+        #         print("Motor2 is busy")
+        #         error_flag = True
+        #     self.delays = 0
+        # else:
+        #     self.delays = self.delays + 1
     #following control function for smoothly controling motors
     def following_control(self):
         for motor_key in self.motor["goal"]:
