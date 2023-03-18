@@ -364,16 +364,16 @@ class teleop_twist(threading.Thread):
     # synchronous, forcing steps on drivers
     def update_steps(self):
         steps = {
-            "M1" : 100,
-            "M2" : 100
+            "M1" : 500,
+            "M2" : 500
         }
         if self.motor["request"]["M1"] < 0:
-            steps["M1"] = -100
+            steps["M1"] = -500
         elif self.motor["request"]["M1"] == 0:
             steps["M1"] = 0
         
         if self.motor["request"]["M2"] < 0:
-            steps["M2"] = -100
+            steps["M2"] = -500
         elif self.motor["request"]["M2"] == 0:
             steps["M2"] = 0
 
