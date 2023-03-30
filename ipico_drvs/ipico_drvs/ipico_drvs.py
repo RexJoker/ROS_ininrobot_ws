@@ -226,7 +226,6 @@ class ipico_drvs(threading.Thread):
                 #try 5 times every 1 second to get data
                 if i > 5:
                     #if there is no any msg to recievie then its bad
-                    #raise Exception("Wait for response too long")
                     print("Waited for get vel response too long")
                     self.ros_node.get_logger().info("Waited for get vel response too long")
                 sleep(0.1)
@@ -237,7 +236,6 @@ class ipico_drvs(threading.Thread):
                 motor[txt] = int(self.feedback["Value"])
                 self.ros_node.rx_update = False
             else:
-                #raise Exception("Bad feedback")
                 print("Bad get vel feedback")
                 self.ros_node.get_logger().info("Bad get vel feedback")
         return motor
@@ -265,7 +263,7 @@ class teleop_twist(threading.Thread):
         self.delays = 0
         self.delays2 = 0
         self.last_time = 0.000 
-        self.delay_time = 0.1 #delay time specified in seconds
+        self.delay_time = 0.2 #delay time specified in seconds
         self.reached = True
         self.end = False
         self.ros_node = arg_node
@@ -282,7 +280,6 @@ class teleop_twist(threading.Thread):
     def request_velocity(self):
         error_flag = False
         self.__calculate(self.velocity)
-        # self.following_control()
         #temporary disabling following control and giving goal values to request
         self.motor["request"]["M1"] = self.motor["goal"]["M1"]
         self.motor["request"]["M2"] = self.motor["goal"]["M2"]
@@ -341,22 +338,14 @@ class teleop_twist(threading.Thread):
             #if velocity data points didnt reached goal:
             while not self.reached:
                 if self.is_time_delayed():
-                    #remember last velocities:
-                    # self.motor["last"] = self.motor["actual"]
                     self.motor["actual"] = self.motor["request"]
                     self.motor["last"] = self.motor["actual"]
-                    #get new ones:
-                    # if self.delays2 > 2:
-                    #     self.delays2 = 0
-                    #     self.motor["actual"] = self.ros_node.ipico_drvs.get_vels()
-                    # else:
-                    #     self.motor["actual"] = self.motor["request"]
-                    #     self.delays2 = self.delays2 + 1
                     self.request_velocity()
                     self.update_steps()
                     #if new values of motor reach goal then stop:
                     if self.check_goal(self.motor["last"], self.motor["actual"], self.motor["goal"]):
-                        self.reached = True
+                        if (self.velocity["linear"]["x"] == 0) and (self.velocity["angular"]["z"] == 0):
+                            self.reached = True
 
             #send data through uart by ipico drivers
             if self.end:
@@ -364,16 +353,16 @@ class teleop_twist(threading.Thread):
     # synchronous, forcing steps on drivers
     def update_steps(self):
         steps = {
-            "M1" : 500,
-            "M2" : 500
+            "M1" : 300,
+            "M2" : 300
         }
         if self.motor["request"]["M1"] < 0:
-            steps["M1"] = -500
+            steps["M1"] = -300
         elif self.motor["request"]["M1"] == 0:
             steps["M1"] = 0
         
         if self.motor["request"]["M2"] < 0:
-            steps["M2"] = -500
+            steps["M2"] = -300
         elif self.motor["request"]["M2"] == 0:
             steps["M2"] = 0
 
@@ -389,18 +378,6 @@ class teleop_twist(threading.Thread):
                 print("Motor2 is busy")
                 self.ros_node.get_logger().info("Motor2 is busy")
                 error_flag = True
-        # if self.delays > 5:
-        #     self.ros_node.ipico_drvs.move_command(move_type=self.ros_node.ipico_drvs.move_type.step.value, action_type=self.ros_node.ipico_drvs.action_type.set.value, driver_nr=1,value=100)
-        #     if not self.ros_node.check_for_response():
-        #         print("Motor1 is busy")
-        #         error_flag = True
-        #     self.ros_node.ipico_drvs.move_command(move_type=self.ros_node.ipico_drvs.move_type.step.value, action_type=self.ros_node.ipico_drvs.action_type.set.value, driver_nr=2,value=100)
-        #     if not self.ros_node.check_for_response():
-        #         print("Motor2 is busy")
-        #         error_flag = True
-        #     self.delays = 0
-        # else:
-        #     self.delays = self.delays + 1
     #following control function for smoothly controling motors
     def following_control(self):
         for motor_key in self.motor["goal"]:
