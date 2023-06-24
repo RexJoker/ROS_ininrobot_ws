@@ -1,6 +1,6 @@
 from setuptools import setup
 
-package_name = 'py_pubsub'
+package_name = 'bug_zero'
 
 setup(
     name=package_name,
@@ -13,15 +13,14 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='YourName',
-    maintainer_email='you@email.com',
-    description='Examples of minimal publisher/subscriber using rclpy',
-    license='Apache License 2.0',
+    maintainer='ininrobot',
+    maintainer_email='ininrobot@todo.todo',
+    description='TODO: Package description',
+    license='TODO: License declaration',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'talker = py_pubsub.publisher_member_function:main',
-            'listener = py_pubsub.subscriber_member_function:main'
+            'bug_rasiewf = bug_zero.bug_zero:main',
         ],
     },
 )

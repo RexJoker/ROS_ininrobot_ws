@@ -8,7 +8,7 @@ class uart_com():
     def __init__(self):
         # UART Configuration: 115200 8n1
         self.port = '/dev/ttyAMA1'
-        self.timeout = 0.01
+        self.timeout = 0.5
         self.baudrate = 115200
         self.parity = serial.PARITY_NONE
         self.stop_bits = 1
@@ -19,8 +19,10 @@ class uart_com():
         # gather full line of data through UART
         response = self.uart.readline()
         str_response = response.decode("utf-8")
+        print(response)
         # remove useless characters: (such as \n or \r) and check if message recieved.
         if str_response.find('\n') != -1:
+            self.get_logger().info(str_response)
             return self.convert_data(str_response)
         return "NULL"
     def convert_data(self, input_text):
